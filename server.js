@@ -1,61 +1,79 @@
-const express = require("express");
-const bodyParser = require("body-parser");
 const axios = require("axios");
-const app = express();
 
-const VERIFY_TOKEN = "freemoneyautodm123";
-const PAGE_ACCESS_TOKEN = "your_page_access_token_here"; // Replace this later
+const sentUsers = new Set(); // Track users already messaged
 
-app.use(bodyParser.json());
+app.post("/webhook", async (req, res) => {
+  const body = req.body;
 
-// ✅ Webhook verification
-app.get("/webhook", (req, res) => {
-  const mode = req.query["hub.mode"];
-  const token = req.query["hub.verify_token"];
-  const challenge = req.query["hub.challenge"];
+  if (body.object === "instagram") {
+    body.entry.forEach(async (entry) => {
+      const changes = entry.changes || [];
 
-  if (mode && token === VERIFY_TOKEN) {
-    res.status(200).send(challenge);
-  } else {
-    res.sendStatus(403);
-  }
-});
+      for (let change of changes) {
+        const value = change.value;
 
-// ✅ Handle Instagram comment events
-app.post("/webhook", (req, res) => {
-  try {
-    const entry = req.body.entry;
+        if (
+          value &&
+          value.comment_id &&
+          value.text &&
+          value.media &&
+          value.media.id &&
+          value.text.toLowerCase().includes("loot")
+        ) {
+          const mediaId = value.media.id;
+          const userId = value.from.id;
 
-    if (entry && Array.isArray(entry)) {
-      entry.forEach((item) => {
-        const changes = item.changes || [];
-        changes.forEach((change) => {
-          const comment = change.value;
-
-          if (
-            comment &&
-            comment.message &&
-            (comment.message.toLowerCase().includes("loot") ||
-              comment.message.toLowerCase().includes("cash"))
-          ) {
-            const commentId = comment.comment_id;
-            const igUserId = comment.from.id;
-
-            console.log(`🔥 New comment from user ${igUserId}: ${comment.message}`);
+          // Only respond once per user
+          if (sentUsers.has(userId)) {
+            console.log("Already messaged user:", userId);
+            continue;
           }
-        });
-      });
-    }
 
-    res.sendStatus(200);
-  } catch (err) {
-    console.error("❌ Error handling webhook:", err);
-    res.sendStatus(500);
+          // Optional: Check if mediaId matches your target Reel ID (DLUbbsCopqC)
+          // You can prefetch and match against expected mediaId once available
+
+          // Send DM using Graph API
+          try {
+            await axios.post(
+              `https://graph.facebook.com/v18.0/${userId}/messages`,
+              {
+                recipient: { id: userId },
+                message: {
+                  text: `🔥 FLASH SALE ₹200 INSTANT CASHBACK
+
+⚡ Open Free Account & Get Instant ₹200 in UPI
+
+⬇️ Link: https://rfox.in/d72c77a
+
+• Enter your UPI ID and Submit.
+
+• Install App in Fresh Device
+
+• Then check your Tracking: https://tracker.rfox.in/upxapptrack
+
+• Complete KYC only if it shows "Tracked". Don't proceed if not.
+
+💎 Use only Mobile Data, not WiFi or Hotspot.`,
+                },
+              },
+              {
+                headers: {
+                  Authorization: `Bearer YOUR_PAGE_ACCESS_TOKEN`,
+                },
+              }
+            );
+
+            sentUsers.add(userId);
+            console.log(`✅ Sent DM to user ${userId}`);
+          } catch (error) {
+            console.error("❌ DM sending failed:", error.response?.data || error.message);
+          }
+        }
+      }
+    });
+
+    res.status(200).send("EVENT_RECEIVED");
+  } else {
+    res.sendStatus(404);
   }
-});
-
-// ✅ Start server
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
 });
